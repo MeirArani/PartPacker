@@ -85,7 +85,7 @@ RUN conda install -c conda-forge libstdcxx-ng -y
 RUN pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
 
 # Clone PartPacker repository
-RUN git clone https://github.com/MeirArani/PartPacker.git
+COPY . /workspace/PartPacker
 
 # Set working directory to the cloned repository
 WORKDIR /workspace/PartPacker
