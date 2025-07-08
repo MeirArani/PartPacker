@@ -116,6 +116,12 @@ ENV LD_LIBRARY_PATH="/workspace/miniconda3/envs/partpacker/lib:${LD_LIBRARY_PATH
 RUN echo "conda activate partpacker" >> ~/.bashrc
 SHELL ["/bin/bash", "--login", "-c"]
 
+
+RUN PYTHONPATH=. python vae/scripts/infer.py --ckpt_path pretrained/vae.pt --input assets/meshes/ --output_dir output/
+
+RUN PYTHONPATH=. python flow/scripts/infer.py --ckpt_path pretrained/flow.pt --input assets/images/ --output_dir output/
+
+
 # Cleanup
 RUN apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
