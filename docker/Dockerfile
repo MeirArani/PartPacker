@@ -90,19 +90,12 @@ RUN git clone https://github.com/MeirArani/PartPacker.git
 # Set working directory to the cloned repository
 WORKDIR /workspace/PartPacker
 
-# Clean up requirements.txt to remove invalid pip options
-RUN sed -i 's/ --no-build-isolation//g' requirements.txt && \
-    sed -i 's/--no-build-isolation//g' requirements.txt
-
 # Install Python dependencies
 RUN pip install -r requirements.txt
-
-# Install transformers
-RUN pip install transformers
-
-# Modify app.py to enable share=True for Gradio
-RUN sed -i 's/block\.launch()/block.launch(share=True)/g' app.py
-
+RUN pip install flash-attn --no-build-isolation
+RUN pip install transformers 
+RUN pip install meshiki
+ 
 # Create pretrained models directory and download models
 RUN mkdir -p pretrained && \
     cd pretrained && \
@@ -116,12 +109,6 @@ ENV LD_LIBRARY_PATH="/workspace/miniconda3/envs/partpacker/lib:${LD_LIBRARY_PATH
 RUN echo "conda activate partpacker" >> ~/.bashrc
 SHELL ["/bin/bash", "--login", "-c"]
 
-
-RUN PYTHONPATH=. python vae/scripts/infer.py --ckpt_path pretrained/vae.pt --input assets/meshes/ --output_dir output/
-
-RUN PYTHONPATH=. python flow/scripts/infer.py --ckpt_path pretrained/flow.pt --input assets/images/ --output_dir output/
-
-
 # Cleanup
 RUN apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
@@ -131,4 +118,4 @@ RUN apt-get clean && \
 EXPOSE 7860
 
 # Set default command to bash
-CMD ["/bin/bash", "python", "app.py"]
+CMD ["/bin/bash", "docker/startup.sh"]

@@ -13,7 +13,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     networks:
-      - ppTest
+      - partpacker
   partpacker:
     container_name: partpacker
     image: partpacker
@@ -32,10 +32,10 @@ services:
               count: 1
               capabilities: [gpu]
     networks:
-      - ppTest
+      - partpacker
 
 networks:
-  ppTest:
+  partpacker:
     external: true
 volumes:
   caddy_data:

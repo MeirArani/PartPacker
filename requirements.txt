@@ -13,3 +13,4 @@ opencv-python
 pymeshlab
 gradio
 transformers
+meshiki
