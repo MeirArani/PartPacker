@@ -1,0 +1,44 @@
+services:
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ${PWD}/caddy/config:/etc/caddy
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - ppTest
+  partpacker:
+    container_name: partpacker
+    image: partpacker
+    build:
+      context: ./
+      dockerfile: Dockerfile
+      network: host
+    ports:
+      - "7860:7860"
+    user: 0:0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - ppTest
+
+networks:
+  docker_mdns:
+    external: true
+  ppTest:
+    external: true
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,3 +1,9 @@
+---
+title: PartPacker
+app_file: app.py
+sdk: gradio
+sdk_version: 5.35.0
+---
 # PartPacker
 
 ![teaser](assets/teaser.gif)

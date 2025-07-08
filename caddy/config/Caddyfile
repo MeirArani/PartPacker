@@ -1,0 +1,11 @@
+{
+	local_certs
+}
+
+http://noe-ai.local {
+	reverse_proxy partpacker:7860
+}
+
+https://noe-ai.local {
+	reverse_proxy partpacker:7860
+}

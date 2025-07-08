@@ -1,7 +1,7 @@
 torch
 numpy
 trimesh
-fpsample
+fpsample==0.3.3
 einops
 onnxruntime
 rembg

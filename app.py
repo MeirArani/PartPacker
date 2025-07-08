@@ -12,7 +12,7 @@ import torch.nn as nn
 import trimesh
 
 # Memory optimization setting
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 try:
     # running on Hugging Face Spaces
@@ -60,91 +60,101 @@ model_config = ModelConfig(
     use_parts=True,
 )
 
+
 # Multi-GPU setup
 def setup_multi_gpu():
     """Configures multiple GPUs and assigns devices."""
     if not torch.cuda.is_available():
-        return {'primary': 'cpu', 'secondary': 'cpu', 'num_gpus': 0}
-    
+        return {"primary": "cpu", "secondary": "cpu", "num_gpus": 0}
+
     num_gpus = torch.cuda.device_count()
     print(f"Number of available GPUs: {num_gpus}")
-    
+
     if num_gpus >= 2:
         # Separate flow and VAE models if 2 or more GPUs are available
-        primary_device = 'cuda:0'  # For flow model
-        secondary_device = 'cuda:1'  # For VAE model
-        print(f"Enabling model parallelism: Flow -> {primary_device}, VAE -> {secondary_device}")
+        primary_device = "cuda:0"  # For flow model
+        secondary_device = "cuda:1"  # For VAE model
+        print(
+            f"Enabling model parallelism: Flow -> {primary_device}, VAE -> {secondary_device}"
+        )
     else:
         # Single GPU case
-        primary_device = 'cuda:0'
-        secondary_device = 'cuda:0'
+        primary_device = "cuda:0"
+        secondary_device = "cuda:0"
         print(f"Using single GPU: {primary_device}")
-    
+
     return {
-        'primary': primary_device,
-        'secondary': secondary_device, 
-        'num_gpus': num_gpus
+        "primary": primary_device,
+        "secondary": secondary_device,
+        "num_gpus": num_gpus,
     }
+
 
 class MultiGPUModel(nn.Module):
     """Model wrapper for multi-GPU support."""
+
     def __init__(self, model_config, gpu_config):
         super().__init__()
         self.gpu_config = gpu_config
         self.config = model_config
-        
+
         # Create the base model
         self.base_model = Model(model_config).eval()
-        
+
         # Place flow model on the primary GPU
-        if hasattr(self.base_model, 'flow'):
-            self.base_model.flow = self.base_model.flow.to(gpu_config['primary']).bfloat16()
-        
+        if hasattr(self.base_model, "flow"):
+            self.base_model.flow = self.base_model.flow.to(
+                gpu_config["primary"]
+            ).bfloat16()
+
         # Place VAE model on the secondary GPU (if available)
-        if hasattr(self.base_model, 'vae'):
-            self.base_model.vae = self.base_model.vae.to(gpu_config['secondary']).bfloat16()
-        
+        if hasattr(self.base_model, "vae"):
+            self.base_model.vae = self.base_model.vae.to(
+                gpu_config["secondary"]
+            ).bfloat16()
+
         # Place other components on the primary GPU
         for name, module in self.base_model.named_children():
-            if name not in ['flow', 'vae']:
-                module.to(gpu_config['primary']).bfloat16()
-    
+            if name not in ["flow", "vae"]:
+                module.to(gpu_config["primary"]).bfloat16()
+
     def forward(self, data, num_steps=50, cfg_scale=7):
         """Performs inference, managing data transfer between devices."""
         # Move input data to the appropriate device
         for key, value in data.items():
             if torch.is_tensor(value):
-                data[key] = value.to(self.gpu_config['primary'])
-        
+                data[key] = value.to(self.gpu_config["primary"])
+
         # Clear memory
-        if self.gpu_config['num_gpus'] > 0:
+        if self.gpu_config["num_gpus"] > 0:
             torch.cuda.empty_cache()
-        
+
         # Generate latent representation with the flow model
         with torch.inference_mode():
             results = self.base_model(data, num_steps=num_steps, cfg_scale=cfg_scale)
-        
+
         return results
-    
+
     def vae_decode(self, data, resolution=384):
         """Performs VAE decoding, transferring data between devices as needed."""
         # Move data to the VAE's device
         for key, value in data.items():
             if torch.is_tensor(value):
-                data[key] = value.to(self.gpu_config['secondary'])
-        
+                data[key] = value.to(self.gpu_config["secondary"])
+
         # Clear memory
-        if self.gpu_config['num_gpus'] > 0:
+        if self.gpu_config["num_gpus"] > 0:
             torch.cuda.empty_cache()
-        
+
         with torch.inference_mode():
             results = self.base_model.vae(data, resolution=resolution)
-        
+
         return results
+
 
 # Parse command line arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--multi', action='store_true', help='Enable multi-GPU support')
+parser.add_argument("--multi", action="store_true", help="Enable multi-GPU support")
 args = parser.parse_args()
 
 # Initialize GPU configuration and model based on arguments
@@ -153,7 +163,7 @@ if args.multi:
     model = MultiGPUModel(model_config, gpu_config)
     multi_gpu_enabled = True
 else:
-    gpu_config = {'num_gpus': 1 if torch.cuda.is_available() else 0}
+    gpu_config = {"num_gpus": 1 if torch.cuda.is_available() else 0}
     model = Model(model_config).eval().cuda().bfloat16()
     multi_gpu_enabled = False
 
@@ -191,28 +201,40 @@ def process_image(image_path):
 # process generation
 @spaces.GPU(duration=90)
 def process_3d(
-    input_image, num_steps=50, cfg_scale=7, grid_res=384, seed=42, simplify_mesh=False, target_num_faces=100000
+    input_image,
+    num_steps=50,
+    cfg_scale=7,
+    grid_res=384,
+    seed=42,
+    simplify_mesh=False,
+    target_num_faces=100000,
 ):
 
     # seed
     kiui.seed_everything(seed)
-    
+
     # Display GPU memory usage for multi-GPU mode
-    if multi_gpu_enabled and gpu_config['num_gpus'] > 0:
-        for i in range(gpu_config['num_gpus']):
+    if multi_gpu_enabled and gpu_config["num_gpus"] > 0:
+        for i in range(gpu_config["num_gpus"]):
             memory_allocated = torch.cuda.memory_allocated(i) / 1024**3
             memory_reserved = torch.cuda.memory_reserved(i) / 1024**3
-            print(f"GPU {i}: Allocated Memory {memory_allocated:.2f}GB, Reserved {memory_reserved:.2f}GB")
+            print(
+                f"GPU {i}: Allocated Memory {memory_allocated:.2f}GB, Reserved {memory_reserved:.2f}GB"
+            )
 
     # output path
     os.makedirs("output", exist_ok=True)
-    output_glb_path = f"output/partpacker_{datetime.now().strftime('%Y%m%d_%H%M%S')}.glb"
+    output_glb_path = (
+        f"output/partpacker_{datetime.now().strftime('%Y%m%d_%H%M%S')}.glb"
+    )
 
     # input image (assume processed to RGBA uint8)
     image = input_image.astype(np.float32) / 255.0
     image = image[..., :3] * image[..., 3:4] + (1 - image[..., 3:4])  # white background
-    image_tensor = torch.from_numpy(image).permute(2, 0, 1).contiguous().unsqueeze(0).float()
-    
+    image_tensor = (
+        torch.from_numpy(image).permute(2, 0, 1).contiguous().unsqueeze(0).float()
+    )
+
     if not multi_gpu_enabled:
         image_tensor = image_tensor.cuda()
 
@@ -229,16 +251,16 @@ def process_3d(
 
         # Generate mesh for part 0
         results_part0 = model.vae_decode(data_part0, resolution=grid_res)
-        
+
         # Clear memory
-        if gpu_config['num_gpus'] > 0:
+        if gpu_config["num_gpus"] > 0:
             torch.cuda.empty_cache()
-        
+
         # Generate mesh for part 1
         results_part1 = model.vae_decode(data_part1, resolution=grid_res)
-        
+
         # Clear memory
-        if gpu_config['num_gpus'] > 0:
+        if gpu_config["num_gpus"] > 0:
             torch.cuda.empty_cache()
     else:
         # Single GPU processing (original code)
@@ -322,26 +344,49 @@ with block:
         with gr.Column(scale=1):
             with gr.Row():
                 # input image
-                input_image = gr.Image(label="Input Image", type="filepath")  # use file_path and load manually
-                seg_image = gr.Image(label="Segmentation Result", type="numpy", interactive=False, image_mode="RGBA")
+                input_image = gr.Image(
+                    label="Input Image", type="filepath"
+                )  # use file_path and load manually
+                seg_image = gr.Image(
+                    label="Segmentation Result",
+                    type="numpy",
+                    interactive=False,
+                    image_mode="RGBA",
+                )
             with gr.Accordion("Settings", open=True):
                 # inference steps
-                num_steps = gr.Slider(label="Inference steps", minimum=1, maximum=100, step=1, value=50)
+                num_steps = gr.Slider(
+                    label="Inference steps", minimum=1, maximum=100, step=1, value=50
+                )
                 # cfg scale
-                cfg_scale = gr.Slider(label="CFG scale", minimum=2, maximum=10, step=0.1, value=7.0)
+                cfg_scale = gr.Slider(
+                    label="CFG scale", minimum=2, maximum=10, step=0.1, value=7.0
+                )
                 # grid resolution - adjust default based on multi-GPU mode
                 default_grid_res = 256 if multi_gpu_enabled else 384
                 min_grid_res = 192 if multi_gpu_enabled else 256
-                input_grid_res = gr.Slider(label="Grid resolution", minimum=min_grid_res, maximum=512, step=1, value=default_grid_res)
+                input_grid_res = gr.Slider(
+                    label="Grid resolution",
+                    minimum=min_grid_res,
+                    maximum=512,
+                    step=1,
+                    value=default_grid_res,
+                )
                 # random seed
                 with gr.Row():
                     randomize_seed = gr.Checkbox(label="Randomize seed", value=True)
-                    seed = gr.Slider(label="Seed", minimum=0, maximum=MAX_SEED, step=1, value=0)
+                    seed = gr.Slider(
+                        label="Seed", minimum=0, maximum=MAX_SEED, step=1, value=0
+                    )
                 # simplify mesh
                 with gr.Row():
                     simplify_mesh = gr.Checkbox(label="Simplify mesh", value=False)
                     target_num_faces = gr.Slider(
-                        label="Face number", minimum=10000, maximum=1000000, step=1000, value=100000
+                        label="Face number",
+                        minimum=10000,
+                        maximum=1000000,
+                        step=1000,
+                        value=100000,
                     )
                 # gen button
                 button_gen = gr.Button("Generate")
@@ -373,8 +418,16 @@ with block:
         get_random_seed, inputs=[randomize_seed, seed], outputs=[seed]
     ).then(
         process_3d,
-        inputs=[seg_image, num_steps, cfg_scale, input_grid_res, seed, simplify_mesh, target_num_faces],
+        inputs=[
+            seg_image,
+            num_steps,
+            cfg_scale,
+            input_grid_res,
+            seed,
+            simplify_mesh,
+            target_num_faces,
+        ],
         outputs=[output_model],
     )
 
-block.launch()
+block.launch(server_name="partpacker", server_port=7860, share=True)

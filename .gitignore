@@ -1,0 +1,7 @@
+.gradio/
+.vscode/
+/output/
+/pretrained/
+/venv/
+__pycache__/
+.python-version

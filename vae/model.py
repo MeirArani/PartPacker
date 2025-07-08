@@ -35,7 +35,9 @@ class Model(nn.Module):
         super().__init__()
         self.config = config
 
-        self.precision = torch.bfloat16  # manually handle low-precision training, always use bf16
+        self.precision = (
+            torch.bfloat16
+        )  # manually handle low-precision training, always use bf16
 
         # point encoder
         self.proj_input = nn.Linear(3 + config.point_fourier_dim, config.hidden_dim)
@@ -61,7 +63,10 @@ class Model(nn.Module):
         self.encoder = nn.ModuleList(
             [
                 AttentionBlock(
-                    config.hidden_dim, config.num_heads, qknorm=config.qknorm, qknorm_type=config.qknorm_type
+                    config.hidden_dim,
+                    config.num_heads,
+                    qknorm=config.qknorm,
+                    qknorm_type=config.qknorm_type,
                 )
                 for _ in range(config.num_enc_layers)
             ]
@@ -78,16 +83,23 @@ class Model(nn.Module):
         self.decoder = nn.ModuleList(
             [
                 AttentionBlock(
-                    config.dec_hidden_dim, config.dec_num_heads, qknorm=config.qknorm, qknorm_type=config.qknorm_type
+                    config.dec_hidden_dim,
+                    config.dec_num_heads,
+                    qknorm=config.qknorm,
+                    qknorm_type=config.qknorm_type,
                 )
                 for _ in range(config.num_dec_layers)
             ]
         )
 
         # cross-attention query
-        self.proj_query = nn.Linear(3 + config.point_fourier_dim, config.query_hidden_dim)
+        self.proj_query = nn.Linear(
+            3 + config.point_fourier_dim, config.query_hidden_dim
+        )
         if self.config.use_flash_query:
-            self.norm_query_context = nn.LayerNorm(config.hidden_dim, eps=1e-6, elementwise_affine=False)
+            self.norm_query_context = nn.LayerNorm(
+                config.hidden_dim, eps=1e-6, elementwise_affine=False
+            )
             self.attn_query = FlashQueryLayer(
                 config.query_hidden_dim,
                 num_heads=config.query_num_heads,
@@ -134,7 +146,9 @@ class Model(nn.Module):
                 if local_state_dict[k].shape == v.shape:
                     local_state_dict[k].copy_(v)
                 else:
-                    print(f"mismatching shape for key {k}: loaded {local_state_dict[k].shape} but model has {v.shape}")
+                    print(
+                        f"mismatching shape for key {k}: loaded {local_state_dict[k].shape} but model has {v.shape}"
+                    )
             else:
                 print(f"unexpected key {k} in loaded state dict")
         for k in seen_keys:
@@ -148,25 +162,39 @@ class Model(nn.Module):
         F = self.config.point_fourier_dim // (2 * points.shape[-1])
 
         if self.config.fourier_version == "v1":  # default
-            exponent = torch.arange(1, F + 1, device=points.device, dtype=torch.float32) / F  # [F], range from 0 to 1
-            freq_band = 512**exponent  # [F], min frequency is 1, max frequency is 1/freq
+            exponent = (
+                torch.arange(1, F + 1, device=points.device, dtype=torch.float32) / F
+            )  # [F], range from 0 to 1
+            freq_band = (
+                512**exponent
+            )  # [F], min frequency is 1, max frequency is 1/freq
             freq_band *= torch.pi
         elif self.config.fourier_version == "v2":
-            exponent = torch.arange(F, device=points.device, dtype=torch.float32) / (F - 1)  # [F], range from 0 to 1
+            exponent = torch.arange(F, device=points.device, dtype=torch.float32) / (
+                F - 1
+            )  # [F], range from 0 to 1
             freq_band = 1024**exponent  # [F]
             freq_band *= torch.pi
         elif self.config.fourier_version == "v3":  # hunyuan3d-2
-            freq_band = 2 ** torch.arange(F, device=points.device, dtype=torch.float32)  # [F]
+            freq_band = 2 ** torch.arange(
+                F, device=points.device, dtype=torch.float32
+            )  # [F]
 
         spectrum = points.unsqueeze(-1) * freq_band  # [B,...,3,F]
         sin, cos = spectrum.sin(), spectrum.cos()  # [B,...,3,F]
         input_enc = torch.stack([sin, cos], dim=-2)  # [B,...,3,2,F]
         input_enc = input_enc.view(*points.shape[:-1], -1)  # [B,...,6F] = [B,...,dim]
-        return torch.cat([input_enc, points], dim=-1).to(dtype=self.precision)  # [B,...,dim+input_dim]
+        return torch.cat([input_enc, points], dim=-1).to(
+            dtype=self.precision
+        )  # [B,...,dim+input_dim]
 
-    def on_train_start(self, memory_format: torch.memory_format = torch.preserve_format) -> None:
+    def on_train_start(
+        self, memory_format: torch.memory_format = torch.preserve_format
+    ) -> None:
         super().on_train_start(memory_format=memory_format)
-        self.to(dtype=self.precision, memory_format=memory_format)  # use bfloat16 for training
+        self.to(
+            dtype=self.precision, memory_format=memory_format
+        )  # use bfloat16 for training
 
     def encode(self, data: dict[str, torch.Tensor]):
         # uniform points
@@ -181,12 +209,20 @@ class Model(nn.Module):
             pointcloud_dorases = data["pointcloud_dorases"]  # [B, M, 3]
 
             # fourier embed and project (shared weights)
-            pointcloud_dorases = self.fourier_encoding(pointcloud_dorases)  # [B, M, 3+C]
-            pointcloud_dorases = self.proj_input(pointcloud_dorases)  # [B, M, hidden_dim]
+            pointcloud_dorases = self.fourier_encoding(
+                pointcloud_dorases
+            )  # [B, M, 3+C]
+            pointcloud_dorases = self.proj_input(
+                pointcloud_dorases
+            )  # [B, M, hidden_dim]
 
         # gather fps point
         fps_indices = data["fps_indices"]  # [B, N']
-        pointcloud_query = torch.gather(pointcloud, 1, fps_indices.unsqueeze(-1).expand(-1, -1, pointcloud.shape[-1]))
+        pointcloud_query = torch.gather(
+            pointcloud,
+            1,
+            fps_indices.unsqueeze(-1).expand(-1, -1, pointcloud.shape[-1]),
+        )
 
         if self.config.use_salient_point:
             fps_indices_dorases = data["fps_indices_dorases"]  # [B, M']
@@ -195,7 +231,9 @@ class Model(nn.Module):
                 pointcloud_query_dorases = torch.gather(
                     pointcloud_dorases,
                     1,
-                    fps_indices_dorases.unsqueeze(-1).expand(-1, -1, pointcloud_dorases.shape[-1]),
+                    fps_indices_dorases.unsqueeze(-1).expand(
+                        -1, -1, pointcloud_dorases.shape[-1]
+                    ),
                 )
 
                 # combine both fps points as the query
@@ -205,17 +243,23 @@ class Model(nn.Module):
 
             # dual cross-attention
             if self.config.salient_attn_mode == "dual_shared":
-                hidden_states = self.perceiver(pointcloud_query, pointcloud) + self.perceiver(
+                hidden_states = self.perceiver(
+                    pointcloud_query, pointcloud
+                ) + self.perceiver(
                     pointcloud_query, pointcloud_dorases
                 )  # [B, N'+M', hidden_dim]
             elif self.config.salient_attn_mode == "dual":
-                hidden_states = self.perceiver(pointcloud_query, pointcloud) + self.perceiver_dorases(
-                    pointcloud_query, pointcloud_dorases
-                )
+                hidden_states = self.perceiver(
+                    pointcloud_query, pointcloud
+                ) + self.perceiver_dorases(pointcloud_query, pointcloud_dorases)
             else:  # single, hunyuan3d-2 style
-                hidden_states = self.perceiver(pointcloud_query, torch.cat([pointcloud, pointcloud_dorases], dim=1))
+                hidden_states = self.perceiver(
+                    pointcloud_query, torch.cat([pointcloud, pointcloud_dorases], dim=1)
+                )
         else:
-            hidden_states = self.perceiver(pointcloud_query, pointcloud)  # [B, N', hidden_dim]
+            hidden_states = self.perceiver(
+                pointcloud_query, pointcloud
+            )  # [B, N', hidden_dim]
 
         # encoder
         for block in self.encoder:
@@ -243,12 +287,13 @@ class Model(nn.Module):
 
     def query(self, query_points: torch.Tensor, hidden_states: torch.Tensor):
         # query_points: [B, N, 3], float32 to keep the precision
-
         query_points = self.fourier_encoding(query_points)  # [B, N, 3+C]
         query_points = self.proj_query(query_points)  # [B, N, hidden_dim]
 
         # cross attention
-        query_output = self.attn_query(query_points, hidden_states)  # [B, N, hidden_dim]
+        query_output = self.attn_query(
+            query_points, hidden_states
+        )  # [B, N, hidden_dim]
 
         # output linear
         query_output = self.norm_out(query_output)
@@ -266,13 +311,19 @@ class Model(nn.Module):
         # cut off fps point during training for progressive flow
         if self.training:
             # randomly choose from a set of cutoff candidates
-            cutoff_index = np.random.choice(len(self.config.cutoff_fps_prob), p=self.config.cutoff_fps_prob)
+            cutoff_index = np.random.choice(
+                len(self.config.cutoff_fps_prob), p=self.config.cutoff_fps_prob
+            )
             cutoff_fps_point = self.config.cutoff_fps_point[cutoff_index]
-            cutoff_fps_salient_point = self.config.cutoff_fps_salient_point[cutoff_index]
+            cutoff_fps_salient_point = self.config.cutoff_fps_salient_point[
+                cutoff_index
+            ]
             # prefix of FPS points are still FPS points
             data["fps_indices"] = data["fps_indices"][:, :cutoff_fps_point]
             if self.config.use_salient_point:
-                data["fps_indices_dorases"] = data["fps_indices_dorases"][:, :cutoff_fps_salient_point]
+                data["fps_indices_dorases"] = data["fps_indices_dorases"][
+                    :, :cutoff_fps_salient_point
+                ]
 
         loss = 0
 
@@ -312,9 +363,11 @@ class Model(nn.Module):
             output["scalar"]["loss_kl"] = loss_kl.detach()
             output["scalar"]["iou_fg"] = calculate_iou(pred, gt, target_value=1)
             output["scalar"]["iou_bg"] = calculate_iou(pred, gt, target_value=0)
-            output["scalar"]["precision"], output["scalar"]["recall"], output["scalar"]["f1"] = calculate_metrics(
-                pred, gt, target_value=1
-            )
+            (
+                output["scalar"]["precision"],
+                output["scalar"]["recall"],
+                output["scalar"]["f1"],
+            ) = calculate_metrics(pred, gt, target_value=1)
 
         return output, loss
 
@@ -351,7 +404,9 @@ class Model(nn.Module):
 
         # decode
         hidden_states = self.decode(latent)
-        output["hidden_states"] = hidden_states  # [B, N, hidden_dim] for the last cross-attention decoder
+        output["hidden_states"] = (
+            hidden_states  # [B, N, hidden_dim] for the last cross-attention decoder
+        )
 
         # the context norm can be moved out to avoid repeated computation
         if self.config.use_flash_query:
@@ -360,7 +415,9 @@ class Model(nn.Module):
         # query
         def chunked_query(grid_points):
             if grid_points.shape[0] <= max_samples_per_iter:
-                return self.query(grid_points.unsqueeze(0), hidden_states).squeeze(-1)  # [B, N]
+                return self.query(grid_points.unsqueeze(0), hidden_states).squeeze(
+                    -1
+                )  # [B, N]
             all_pred = []
             for i in range(0, grid_points.shape[0], max_samples_per_iter):
                 grid_chunk = grid_points[i : i + max_samples_per_iter]
@@ -371,10 +428,16 @@ class Model(nn.Module):
         if mode == "dense":
             grid_points = construct_grid_points(resolution).to(latent.device)
             grid_points = grid_points.contiguous().view(-1, 3)
-            grid_vals = chunked_query(grid_points).float().view(B, resolution + 1, resolution + 1, resolution + 1)
+            grid_vals = (
+                chunked_query(grid_points)
+                .float()
+                .view(B, resolution + 1, resolution + 1, resolution + 1)
+            )
 
         elif mode == "hierarchical":
-            assert resolution >= min_resolution, "Resolution must be greater than or equal to min_resolution"
+            assert (
+                resolution >= min_resolution
+            ), "Resolution must be greater than or equal to min_resolution"
             assert B == 1, "Only one batch is supported for hierarchical mode"
 
             resolutions = []
@@ -388,11 +451,17 @@ class Model(nn.Module):
             res = resolutions[0]
             grid_points = construct_grid_points(res).to(latent.device)
             grid_points = grid_points.contiguous().view(-1, 3)
-            grid_vals = chunked_query(grid_points).float().view(res + 1, res + 1, res + 1)
+            grid_vals = (
+                chunked_query(grid_points).float().view(res + 1, res + 1, res + 1)
+            )
 
             # sparse-query finer resolutions
-            dilate_kernel_3 = torch.ones(1, 1, 3, 3, 3, dtype=torch.float32, device=latent.device)
-            dilate_kernel_5 = torch.ones(1, 1, 5, 5, 5, dtype=torch.float32, device=latent.device)
+            dilate_kernel_3 = torch.ones(
+                1, 1, 3, 3, 3, dtype=torch.float32, device=latent.device
+            )
+            dilate_kernel_5 = torch.ones(
+                1, 1, 5, 5, 5, dtype=torch.float32, device=latent.device
+            )
             for i in range(1, len(resolutions)):
                 res = resolutions[i]
                 # get the boundary grid mask in the coarser grid (where the grid_vals have different signs with at least one of its neighbors)
@@ -415,7 +484,9 @@ class Model(nn.Module):
                 # get the coarse coordinates
                 cidx_x, cidx_y, cidx_z = torch.nonzero(mask, as_tuple=True)
                 # fill to the fine indices
-                mask_fine = torch.zeros(res + 1, res + 1, res + 1, dtype=torch.float32, device=latent.device)
+                mask_fine = torch.zeros(
+                    res + 1, res + 1, res + 1, dtype=torch.float32, device=latent.device
+                )
                 mask_fine[cidx_x * 2, cidx_y * 2, cidx_z * 2] = 1
                 # empirical: dilate the fine mask
                 if res < 512:
@@ -434,12 +505,19 @@ class Model(nn.Module):
                 # query
                 pred = chunked_query(query_points).float()
                 # fill to the fine indices
-                grid_vals = torch.full((res + 1, res + 1, res + 1), -100.0, dtype=torch.float32, device=latent.device)
+                grid_vals = torch.full(
+                    (res + 1, res + 1, res + 1),
+                    -100.0,
+                    dtype=torch.float32,
+                    device=latent.device,
+                )
                 grid_vals[fidx_x, fidx_y, fidx_z] = pred
                 # print(f"[INFO] hierarchical: resolution: {res}, valid coarse points: {len(cidx_x)}, valid fine points: {len(fidx_x)}")
 
             grid_vals = grid_vals.unsqueeze(0)  # [1, res+1, res+1, res+1]
-            grid_vals[grid_vals <= -100.0] = float("nan")  # use nans to ignore invalid regions
+            grid_vals[grid_vals <= -100.0] = float(
+                "nan"
+            )  # use nans to ignore invalid regions
 
         # extract mesh
         meshes = []
