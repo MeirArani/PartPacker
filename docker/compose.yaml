@@ -35,8 +35,6 @@ services:
       - ppTest
 
 networks:
-  docker_mdns:
-    external: true
   ppTest:
     external: true
 volumes:
