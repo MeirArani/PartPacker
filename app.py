@@ -155,6 +155,10 @@ class MultiGPUModel(nn.Module):
 # Parse command line arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("--multi", action="store_true", help="Enable multi-GPU support")
+parser.add_argument(
+    "--port", "-p", help="Specify server port number", type=int, default=7860
+)
+parser.add_argument("--hostname", help="Specify server hostname", default="localhost")
 args = parser.parse_args()
 
 # Initialize GPU configuration and model based on arguments
@@ -430,4 +434,4 @@ with block:
         outputs=[output_model],
     )
 
-block.launch(server_name="partpacker", server_port=7860, share=True)
+block.launch(server_name=args.hostname, server_port=args.port, share=True)
