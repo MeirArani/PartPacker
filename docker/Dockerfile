@@ -125,4 +125,4 @@ RUN apt-get clean && \
 EXPOSE 7860
 
 # Set default command to bash
-CMD ["/bin/bash"]
+CMD ["/bin/bash", "python", "app.py"]
