@@ -118,4 +118,4 @@ RUN apt-get clean && \
 EXPOSE 7860
 
 # Set default command to bash
-CMD ["/bin/bash", "docker/startup.sh"]
+CMD ["/bin/bash", "-c", "ls -l docker"]

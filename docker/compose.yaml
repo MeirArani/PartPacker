@@ -36,7 +36,7 @@ services:
 
 networks:
   partpacker:
-    external: true
+    driver: bridge
 volumes:
   caddy_data:
   caddy_config:
