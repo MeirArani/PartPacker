@@ -4,5 +4,5 @@ PYTHONPATH=. python vae/scripts/infer.py --ckpt_path pretrained/vae.pt --input a
 
 PYTHONPATH=. python flow/scripts/infer.py --ckpt_path pretrained/flow.pt --input assets/images/ --output_dir output/
 
-python app.py
+python app.py --hostname partpacker
  
