@@ -1,3 +1,4 @@
+name: partpacker-server
 services:
   caddy:
     image: caddy:latest
@@ -9,20 +10,22 @@ services:
       - "443:443"
       - "443:443/udp"
     volumes:
-      - ${PWD}/caddy/config:/etc/caddy
+      - ${PWD}/docker/caddy/config:/etc/caddy
       - caddy_data:/data
       - caddy_config:/config
     networks:
       - partpacker
   partpacker:
-    container_name: partpacker
     image: partpacker
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: docker/Dockerfile
       network: host
     ports:
       - "7860:7860"
+    volumes:
+      - ${PWD}/pretrained:/workspace/PartPacker/pretrained
+      - ${PWD}/output:/workspace/PartPacker/output
     user: 0:0
     deploy:
       resources:

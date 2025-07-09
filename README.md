@@ -4,14 +4,167 @@ app_file: app.py
 sdk: gradio
 sdk_version: 5.35.0
 ---
-# PartPacker
+
+# NOE Manual
+
+This document outlines the structure of this software, as well as how to build/run/deploy it on any given GPU-enabled machine.
+
+## Requirements
+
+- Docker
+- Nvidia Container Toolkit
+
+## TL;DR
+
+- Launch: `sudo docker compose up`
+- Shutdown: `sudo docker compose down`
+
+## Overview
+
+`PartPacker` is basically made up of a core `app.py` runner, a bunch of `python` dependencies stored in a `conda` virtual environment, and a `gradio` app for deploying itself to the web.
+
+Docker functionality is also accessible via the `docker/` subdirectory.
+
+Other subdirectories contain misc data related to running the software. If you need to tinker with code, the `app.py`, `vae/model.py`, and `flow/model.py` are good places to start.
+
+## Docker
+
+### Running
+
+If you just need to run the server, without making any changes to the source files, then you can simply run:
+
+`sudo docker compose up `
+
+You can also set down the server in a similar fashion:
+
+`sudo docker compose down`
+
+### Building
+
+If changes are made to the source files, a new Docker image will need to be built. You can run the build and launch using:
+
+`sudo docker compose up --build`
+
+You can also append `--no-start` if you would like to build the image without starting the server.
+
+#### Partpacker
+
+The software is run via a docker compose file located at `docker/compose.yaml`
+
+Here's an overview of the `partpacker` service:
+
+```yaml
+partpacker:
+  image: partpacker
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    network: host
+  ports:
+    - "7860:7860"
+  volumes:
+    - ${PWD}/pretrained:/workspace/PartPacker/pretrained
+    - ${PWD}/output:/workspace/PartPacker/output
+  user: 0:0
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+  networks:
+    - partpacker
+```
+
+The `deploy` block configures GPU access. Currently only one GPU is being used, but you can scale the number up as needed via the `count` parameter. The default port for the webserver, `7860`, is also exposed.
+
+#### Caddy
+
+In order to make use of simple mDNS for local routing, a `caddy` container runs alongside `partpacker`:
+
+```yaml
+caddy:
+  image: caddy:latest
+  restart: unless-stopped
+  cap_add:
+    - NET_ADMIN
+  ports:
+    - "80:80"
+    - "443:443"
+    - "443:443/udp"
+  volumes:
+    - ${PWD}/docker/caddy/config:/etc/caddy
+    - caddy_data:/data
+    - caddy_config:/config
+  networks:
+    - partpacker
+```
+
+This exposes some basic networking ports, as well as some directories `caddy` needs to function.
+
+The `Caddyfile` configuration located at `docker/caddy/config/Caddyfile` uses simple routes to support mDNS:
+
+```caddy
+{
+	local_certs
+}
+
+http://noe-ai.local {
+	reverse_proxy partpacker:7860
+}
+
+https://noe-ai.local {
+	reverse_proxy partpacker:7860
+}
+```
+
+This enables local users to connect to the webserver by accessing `http://noe-ai.local`
+
+If you connect via HTTPS you will see a security warning, which you'll need to bypass.
+
+#### Dockerfile / `startup.sh`
+
+The `docker/Dockerfile` contains the actual build instructions. After finishing the build, `docker/startup.sh` is executed, meaning you can place commands here to run them before the server launches.
+
+The current startup looks like this:
+
+```sh
+#!/bin/bash
+
+[ ! -d "output" ] && PYTHONPATH=. python vae/scripts/infer.py --ckpt_path pretrained/vae.pt --input assets/meshes/ --output_dir output/
+
+[ ! -d "output" ] && PYTHONPATH=. python flow/scripts/infer.py --ckpt_path pretrained/flow.pt --input assets/images/ --output_dir output/
+
+python app.py --hostname partpacker
+```
+
+The first two commands perform some inference training prior to launching the server. They are skipped if an inference `output` directory is already detected.
+
+The final command is the actual server launch. Note the `--hostname` command, which allows you to change the hostname of the webserver. A `--port`/` -p` argument is also supplied if you'd like to change the port number. Lastly, a `--multi` argument can be used if you want to make use of multiple GPUs.
+
+### A note on networking
+
+Docker containers network internally--meaning they can't access the outside network by default. Containers can connect to other containers by using their container name as if it were a network hostname, which is why our hostname is set to `partpacker` (the name of our docker image) in the `app.py` launch.
+
+This is also why caddy references `reverse_proxy partpacker:7860` in its configuration. It's telling `caddy` to redirect incoming traffic to the `partpacker` container (our partpacker server) via its preferred port (`7860`).
+
+The `caddy` container, however, _is_ able to connect to the outside network in order to listen for incoming traffic from other machines. This is done via an option in the `compose.yaml` file:
+
+```yaml
+cap_add:
+  - NET_ADMIN
+```
+
+This allows `caddy` to read and send traffic to the network outside of docker. `partpacker`, however, has no direct access to external networks--meaning it must route all of its traffic through `caddy`.
+
+# PartPacker (Original README)
 
 ![teaser](assets/teaser.gif)
 
 ### [Project Page](https://research.nvidia.com/labs/dir/partpacker/) | [Arxiv](https://arxiv.org/abs/2506.09980) | [Models](https://huggingface.co/nvidia/PartPacker) | [Demo](https://huggingface.co/spaces/nvidia/PartPacker)
 
-
-This is the official implementation of *PartPacker: Efficient Part-level 3D Object Generation via Dual Volume Packing*.
+This is the official implementation of _PartPacker: Efficient Part-level 3D Object Generation via Dual Volume Packing_.
 
 Our model performs part-level 3D object generation from single-view images.
 
@@ -33,6 +186,7 @@ pip install meshiki
 ```
 
 ### Windows Installation
+
 It is confirmed to work on Python 3.10, with Cuda 12.4 and Torch 2.51 with TorchVision 0.20.1.
 
 It may work with other versions or combinations, but has been tested and confirm to work on NVidia 3090 and 4090 GPUs.
@@ -49,12 +203,12 @@ It may work with other versions or combinations, but has been tested and confirm
   - `pip install -r requirements.txt`
 
 ### Running the GUI
+
 Run the app with `py app.py`
 
 It will auto-download the needed models and give you a URL for the gradio app in the console.
 
 ![image](https://github.com/user-attachments/assets/205e1d08-fc8a-4041-9845-5a9ce9cfa5f8)
-
 
 ### Pretrained models
 
@@ -93,6 +247,7 @@ The application supports multi-GPU inference for those who are lack of GPU memor
 - **Multi-GPU mode**: `python app.py --multi`
 
 In multi-GPU mode:
+
 - The flow model is placed on GPU 0
 - The VAE model is placed on GPU 1 (if available)
 - Automatic memory management and data transfer between GPUs
@@ -103,7 +258,7 @@ If only one GPU is available, the system automatically falls back to single-GPU 
 
 ### Data Processing
 
-We provide a *Dual Volume Packing* implementation to process raw glb meshes into two separate meshes as proposed in the paper.
+We provide a _Dual Volume Packing_ implementation to process raw glb meshes into two separate meshes as proposed in the paper.
 
 ```bash
 cd data
@@ -115,9 +270,9 @@ python bipartite_contraction.py ./example_mesh.glb
 
 This work is built on many amazing research works and open-source projects, thanks a lot to all the authors for sharing!
 
-* [Dora](https://github.com/Seed3D/Dora)
-* [Hunyuan3D-2](https://github.com/Tencent/Hunyuan3D-2)
-* [Trellis](https://github.com/microsoft/TRELLIS)
+- [Dora](https://github.com/Seed3D/Dora)
+- [Hunyuan3D-2](https://github.com/Tencent/Hunyuan3D-2)
+- [Trellis](https://github.com/microsoft/TRELLIS)
 
 ## Citation
 

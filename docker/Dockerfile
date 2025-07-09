@@ -85,10 +85,11 @@ RUN conda install -c conda-forge libstdcxx-ng -y
 RUN pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
 
 # Clone PartPacker repository
-COPY . /workspace/PartPacker/
 
 # Set working directory to the cloned repository
 WORKDIR /workspace/PartPacker
+
+COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install -r requirements.txt
@@ -99,8 +100,8 @@ RUN pip install meshiki
 # Create pretrained models directory and download models
 RUN mkdir -p pretrained && \
     cd pretrained && \
-    wget https://huggingface.co/nvidia/PartPacker/resolve/main/vae.pt && \
-    wget https://huggingface.co/nvidia/PartPacker/resolve/main/flow.pt
+    wget -nc https://huggingface.co/nvidia/PartPacker/resolve/main/vae.pt && \
+    wget -nc https://huggingface.co/nvidia/PartPacker/resolve/main/flow.pt
 
 # Set global library paths to ensure proper linking at runtime
 ENV LD_LIBRARY_PATH="/workspace/miniconda3/envs/partpacker/lib:${LD_LIBRARY_PATH}"
@@ -113,6 +114,8 @@ SHELL ["/bin/bash", "--login", "-c"]
 RUN apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     conda clean -a -y
+
+COPY . /workspace/PartPacker/
 
 # Expose port for Gradio app
 EXPOSE 7860
