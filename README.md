@@ -5,7 +5,162 @@ sdk: gradio
 sdk_version: 5.35.0
 ---
 
-# NOE Manual
+# マニュアル
+
+本書では PartPacker サーバーの操作と、GPU・Linux 付パソコンでビルド・実行する方法を案内します。
+
+## 必要なライブラリ
+
+- Docker
+- Nvidia Container Toolkit
+
+## コマンド要約
+
+(カレントディレクトリは`PartPacker`だったら)
+
+- 起動：`sudo docker compose up`
+- 停止：`sudo docker compose down`
+
+## 概要
+
+`PartPacker`というのは、`python`のパッケージをインストールされた`conda`の仮想環境で、`app.py`というスクリプトを利用して 使いやすい`gradio`サーバーが作られるのソフトです。
+
+Docker の機能は`docker/`というフォルダに入っています。
+
+他のフォルダには様々なデータが入っています。
+ソフト編集の必要があれば、`app.py`、 `vae/model.py`、 `flow/model.py`のファイルはいい出発点かもしれない。
+
+## Docker
+
+### 起動・停止
+
+サーバーを簡単に起動したいなら、
+
+`sudo docker compose up`
+
+を最上位のディレクトリ（この`README.md`のファイルを入って、`PartPacker`というディレクトリ）で入力してください。
+
+一方ではサーバー停止の時になると、
+
+`sudo docker compose down`
+
+を同じところで入力してください。
+
+### ビルド
+
+ソースコードを編集したら、新しい Docker のイメージを作る必要があります。そうすると、
+
+`sudo docker compose up --build`
+
+はビルドして起動のコマンドです。`--no-start`を追加したら、起動せずにビルドだけできます。
+
+#### Partpacker
+
+このソフトは Docker Compose のファイル（`docker/compose.yaml`)で実行されています。
+
+その中での`partpacker`というサービスは下記に示されています。
+
+```yaml
+partpacker:
+  image: partpacker
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    network: host
+  ports:
+    - "7860:7860"
+  volumes:
+    - ${PWD}/pretrained:/workspace/PartPacker/pretrained
+    - ${PWD}/output:/workspace/PartPacker/output
+  user: 0:0
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+  networks:
+    - partpacker
+```
+
+`deploy`という部分では GPU アクセスを設定がされます。現在、一つの GPU しか利用していませんが、`count`という引数の編集で変えます。
+
+サーバーのデフォルト・ポート（`7860`)も公開されます。
+
+#### Caddy
+
+ｍ DNS を活かすために、`caddy`というネットワーキングサービスも同時に利用されています。
+
+```yaml
+caddy:
+  image: caddy:latest
+  restart: unless-stopped
+  cap_add:
+    - NET_ADMIN
+  ports:
+    - "80:80"
+    - "443:443"
+    - "443:443/udp"
+  volumes:
+    - ${PWD}/docker/caddy/config:/etc/caddy
+    - caddy_data:/data
+    - caddy_config:/config
+  networks:
+    - partpacker
+```
+
+上記のブンブンでネットワーキングのポートを公開し、設定ファイルを転送されています。
+
+`Caddyfile`という設定ファイルは`docker/caddy/config/Caddyfile`に入っています。このファイルでｍ DNS を簡単に利用できます：
+
+```caddy
+{
+	local_certs
+}
+
+http://noe-ai.local {
+	reverse_proxy partpacker:7860
+}
+
+https://noe-ai.local {
+	reverse_proxy partpacker:7860
+}
+```
+
+それでローカルネットワークで`http://noe-ai.local`という URL でサーバー接続ができます。
+
+**_注意：_** `https://`で接続すれば、セキュリティのワーニングが出るかもしれません。その時、サイト除外を追加してください（方法はブラウザによると違います）。
+
+#### Dockerfile / `startup.sh`
+
+`docker/Dockerfile`というファイルにはビルドのコードが入っています。ビルド完了の後で、`docker/startup.sh`というスクリプトが実行されています。つまり、サーバー起動の前にコマンド実行の必要があれば、`startup.sh`の最終行の前に追加してください。
+
+現在の`startup.sh`は下記：
+
+```sh
+#!/bin/bash
+
+[ ! -d "output" ] && PYTHONPATH=. python vae/scripts/infer.py --ckpt_path pretrained/vae.pt --input assets/meshes/ --output_dir output/
+
+[ ! -d "output" ] && PYTHONPATH=. python flow/scripts/infer.py --ckpt_path pretrained/flow.pt --input assets/images/ --output_dir output/
+
+python app.py --hostname partpacker
+```
+
+最初 2 つのコマンドでは ML の推論（inference）とトレーニングがされます。既に実行されたら（`output`というディレクトリがあれば）、省略されます。
+
+最終行はサーバーの起動です。`--hostname`・`--port | -p`の引数で、サイトのホスト名・ポートがカスタマイズできます。最後に、`--multi`の引数で複数の GPU が利用できます。
+
+### ネットワーキングの注意
+
+Docker Container のネットワークは特別なイントラネットです。つまり、デフォルト設定で他の Container 以外接続できません。それで、他の Container を接続する時、Container の名をホスト名として使えられますから、`partpacker`というホスト名でも接続できます。
+
+そのため、`Caddyfile`の`reverse_proxy partpacker:7860`コマンドで、サーバーに接続できます。
+
+`compose.yaml`の`caddy`設定の部分には`cap_add: NET_ADMIN`の設定で、`caddy`が Docker 以外のネットワークに接続できます。つまり、`caddy`の Container を通じて、他の Container が外のネットワークに接続できます。
+
+# Manual (English)
 
 This document outlines the structure of this software, as well as how to build/run/deploy it on any given GPU-enabled machine.
 
@@ -15,6 +170,8 @@ This document outlines the structure of this software, as well as how to build/r
 - Nvidia Container Toolkit
 
 ## TL;DR
+
+(In the `PartPacker` directory)
 
 - Launch: `sudo docker compose up`
 - Shutdown: `sudo docker compose down`
@@ -77,7 +234,9 @@ partpacker:
     - partpacker
 ```
 
-The `deploy` block configures GPU access. Currently only one GPU is being used, but you can scale the number up as needed via the `count` parameter. The default port for the webserver, `7860`, is also exposed.
+The `deploy` block configures GPU access. Currently only one GPU is being used, but you can scale the number up as needed via the `count` parameter.
+
+The default port for the webserver, `7860`, is also exposed.
 
 #### Caddy
 
